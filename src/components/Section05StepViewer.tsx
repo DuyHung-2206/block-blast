@@ -215,8 +215,40 @@ export const Section05StepViewer: React.FC<Section05StepViewerProps> = ({
       {/* Summary or Empty State description */}
       {solution ? (
         <div className="flex flex-col gap-3">
-          <div className="text-xs text-slate-300 leading-relaxed">
-            Lời giải đầy đủ · Đặt đủ 3/3 khối · {solution.linesClearedTotal} hàng/cột được giải phóng · Điểm chiến lược: {Math.round(solution.futureScore)} · {nodesVisited} trạng thái đã xét · Mô phỏng đa lượt sống sót: {solution.predictedSurvivalDepth} lượt ({solution.testedFutureBranches} kịch bản nhánh).
+          <div className="text-xs text-slate-300 leading-relaxed bg-[#0a0f1d] p-3 rounded-xl border border-[#1e293b] flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-200">
+                ✓ Lời giải hoàn chỉnh (Đặt đủ 3/3 khối)
+              </span>
+              <span className="text-[11px] font-semibold text-blue-400 bg-blue-950/40 px-2 py-0.5 rounded-md border border-blue-800/40">
+                Điểm chiến lược: {Math.round(solution.futureScore)}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Giải phóng: {solution.linesClearedTotal} hàng/cột · {nodesVisited ?? '—'} trạng thái đã duyệt · Ô trống: {solution.freeCells} ô · Slot mở 3×3: {solution.open3x3Slots} · Slot mở 5-line: {solution.openLine5Slots} · Lỗ thủng cô lập: {solution.isolatedHoles}.
+            </div>
+            {solution.futureMetrics && (
+              <div className="text-[11px] text-slate-400 pt-1.5 border-t border-[#1e293b]/60 flex flex-col gap-1 font-mono">
+                <div className="text-emerald-400 font-sans font-medium flex items-center gap-1.5">
+                  <span>● Trạng thái tương lai:</span>
+                  <span>
+                    {solution.futureMetrics.status === 'FUTURE_PATH_FOUND' && `Tìm thấy đường sống sót qua ${solution.predictedSurvivalDepth} lượt`}
+                    {solution.futureMetrics.status === 'FUTURE_DEAD_END_FOUND' && 'Các kịch bản đã thử đều dẫn đến bế tắc (Cần thận trọng)'}
+                    {solution.futureMetrics.status === 'FUTURE_PATH_FAILED' && 'Đã vét cạn toàn bộ kịch bản và xác nhận không có đường sống sót'}
+                    {solution.futureMetrics.status === 'FUTURE_SEARCH_INCOMPLETE' && 'Tìm kiếm tương lai chưa hoàn tất'}
+                  </span>
+                </div>
+                <div>
+                  Mô phỏng tương lai: Đã thử {solution.futureMetrics.scenariosTested}/{solution.futureMetrics.totalPossibleTriplets} kịch bản bộ ba ({(solution.futureMetrics.scenarioCoverage * 100).toFixed(2)}% không gian N³).
+                </div>
+                <div>
+                  Độ bao phủ thư viện: Phủ sóng {Math.round(solution.futureMetrics.shapeCoverage * 100)}% hình dạng độc nhất · Bàn cờ sau lượt đặt vừa {Math.round(solution.futureMetrics.fitRatio * 100)}% tổng số khối trong thư viện ({solution.futureMetrics.uniqueShapesCount} khối độc nhất).
+                </div>
+                <div className="text-slate-500 text-[10px]">
+                  * Giới hạn: Còn {solution.futureMetrics.untestedScenariosCount} kịch bản chưa kiểm tra (áp dụng phương pháp kịch bản đại diện để tránh treo trình duyệt).
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 3 Step Cards matching exact screenshot with colored step badges */}

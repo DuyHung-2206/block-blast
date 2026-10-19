@@ -15,6 +15,7 @@ import { IndependentVerifier } from './verifier.js';
 export interface SolverOptions {
   maxSolutions?: number; // e.g. 150
   timeLimitMs?: number;  // e.g. 4000 ms
+  maxNodes?: number;     // e.g. 50000 states
   findAllPermutations?: boolean;
 }
 
@@ -41,7 +42,7 @@ export class Exact3PieceSolver {
    * 
    * GUARANTEES:
    * 1. Only recognizes solutions where all 3 pieces are successfully placed and verified.
-   * 2. NEVER concludes NO_COMPLETE_SOLUTION if search is incomplete (e.g. timeout, max solutions, abort).
+   * 2. NEVER concludes NO_COMPLETE_SOLUTION if search is incomplete (e.g. timeout, max solutions, max nodes, abort).
    * 3. Independent verification step runs on each candidate solution before acceptance.
    */
   static solve(
@@ -52,6 +53,7 @@ export class Exact3PieceSolver {
     const startTime = performance.now();
     const maxSolutions = options.maxSolutions ?? 200;
     const timeLimitMs = options.timeLimitMs ?? 4000;
+    const maxNodes = options.maxNodes ?? 1000000;
 
     // Validate inputs
     if (!pieces || pieces.length !== 3 || pieces.some((p) => !p)) {
@@ -104,6 +106,7 @@ export class Exact3PieceSolver {
     let nodesVisited = 0;
     let timedOut = false;
     let maxSolutionsHit = false;
+    let maxNodesHit = false;
 
     // Transposition table for state deduplication per permutation:
     // Key: `${stepDepth}_${bb.toString()}`
@@ -118,6 +121,12 @@ export class Exact3PieceSolver {
       linesClearedAcc: number
     ) => {
       nodesVisited++;
+
+      // Check max nodes limit
+      if (nodesVisited >= maxNodes) {
+        maxNodesHit = true;
+        return;
+      }
 
       // Check timeout
       if (performance.now() - startTime > timeLimitMs) {
@@ -205,7 +214,7 @@ export class Exact3PieceSolver {
     // Execute search across all unique permutations
     let permsTested = 0;
     for (const perm of uniquePermutations) {
-      if (timedOut || maxSolutionsHit) break;
+      if (timedOut || maxSolutionsHit || maxNodesHit) break;
       permsTested++;
       transposition.clear();
       search(perm, 0, initialBb, [], 0);
@@ -256,12 +265,18 @@ export class Exact3PieceSolver {
     }
 
     // Determine termination reason & completeness flags
-    const searchCompletedExhaustively = !timedOut && !maxSolutionsHit && permsTested === uniquePermutations.length;
+    const searchCompletedExhaustively =
+      !timedOut &&
+      !maxSolutionsHit &&
+      !maxNodesHit &&
+      permsTested === uniquePermutations.length;
     const allSolutionsEnumerated = searchCompletedExhaustively;
 
     let terminationReason: TerminationReason = 'EXHAUSTIVE_SEARCH_COMPLETED';
     if (timedOut) {
       terminationReason = 'TIMEOUT';
+    } else if (maxNodesHit) {
+      terminationReason = 'MAX_NODES_REACHED';
     } else if (maxSolutionsHit) {
       terminationReason = 'MAX_SOLUTIONS_REACHED';
     }
@@ -274,13 +289,22 @@ export class Exact3PieceSolver {
       status = 'SOLVED_COMPLETE';
       message = allSolutionsEnumerated
         ? `Đã tìm thấy và kiểm chứng độc lập toàn bộ ${verifiedSolutions.length} phương án hoàn chỉnh (đủ cả 3 khối).`
-        : `Tìm thấy ${verifiedSolutions.length} phương án hoàn chỉnh (tìm kiếm dừng sớm do ${terminationReason === 'TIMEOUT' ? 'hết thời gian' : 'đạt giới hạn số nghiệm'}).`;
+        : `Tìm thấy ${verifiedSolutions.length} phương án hoàn chỉnh (tìm kiếm dừng sớm do ${
+            terminationReason === 'TIMEOUT'
+              ? 'hết thời gian'
+              : terminationReason === 'MAX_NODES_REACHED'
+              ? 'đạt giới hạn trạng thái duyệt'
+              : 'đạt giới hạn số nghiệm'
+          }).`;
     } else if (!searchCompletedExhaustively) {
       // If 0 solutions found but search was cut short, MUST BE SEARCH_INCOMPLETE, NOT NO_COMPLETE_SOLUTION!
       status = 'SEARCH_INCOMPLETE';
-      message = terminationReason === 'TIMEOUT'
-        ? `Chưa hoàn tất tìm kiếm do hết thời gian (${timeLimitMs}ms). Chưa thể kết luận thế cờ có vô nghiệm hay không.`
-        : `Tìm kiếm chưa hoàn tất do đạt giới hạn tài nguyên.`;
+      message =
+        terminationReason === 'TIMEOUT'
+          ? `Chưa hoàn tất tìm kiếm do hết thời gian (${timeLimitMs}ms). Chưa thể kết luận thế cờ có vô nghiệm hay không.`
+          : terminationReason === 'MAX_NODES_REACHED'
+          ? `Chưa hoàn tất tìm kiếm do đạt giới hạn trạng thái (${maxNodes} nodes). Chưa thể kết luận thế cờ có vô nghiệm hay không.`
+          : `Tìm kiếm chưa hoàn tất do đạt giới hạn số lượng nghiệm.`;
     } else {
       // Exhaustive search finished and zero valid 3-piece solutions exist
       status = 'NO_COMPLETE_SOLUTION';

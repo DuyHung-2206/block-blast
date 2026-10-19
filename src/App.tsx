@@ -156,7 +156,12 @@ export function App() {
 
       if (res.status === 'SOLVED_COMPLETE' && res.solutions.length > 0) {
         // Tầng B: Future-State Strategic Planner
-        const ranked = FutureStatePlanner.rankSolutions(res.solutions, strategy);
+        const ranked = FutureStatePlanner.rankSolutions(res.solutions, {
+          strategy,
+          scenarioMode: 'representative',
+          futureDepth: strategy === 'deep' ? 3 : 2,
+          maxScenarios: strategy === 'fast' ? 12 : strategy === 'deep' ? 30 : 18,
+        });
         setRankedSolutions(ranked);
         setSelectedSolution(ranked[0]);
       } else {

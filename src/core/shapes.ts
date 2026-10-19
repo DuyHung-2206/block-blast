@@ -1,50 +1,241 @@
 import { PieceShape } from './types.js';
 
-export function normalizeMatrix(matrix: number[][]): PieceShape | null {
-  const height = matrix.length;
-  const width = matrix[0].length;
-  let minR = height, maxR = -1, minC = width, maxC = -1;
+/**
+ * Returns a canonical deterministic string representing the geometric cell structure.
+ * Translates coordinates so minR=0, minC=0, sorts cells, and encodes as:
+ * `${height}x${width}:r1,c1;r2,c2;...`
+ */
+export function getCanonicalShapeKey(
+  input: number[][] | Array<[number, number]> | PieceShape
+): string {
+  let cells: Array<[number, number]> = [];
 
-  for (let r = 0; r < height; r++) {
-    for (let c = 0; c < width; c++) {
-      if (matrix[r][c] === 1) {
-        if (r < minR) minR = r;
-        if (r > maxR) maxR = r;
-        if (c < minC) minC = c;
-        if (c > maxC) maxC = c;
+  if (Array.isArray(input)) {
+    if (input.length === 0) return 'empty';
+    if (Array.isArray(input[0])) {
+      if (typeof input[0][0] === 'number' && input[0].length === 2 && !Array.isArray(input[0][0])) {
+        // Array of coordinate pairs [r, c]
+        cells = (input as Array<[number, number]>).slice();
+      } else {
+        // 2D number[][] matrix
+        const mat = input as number[][];
+        for (let r = 0; r < mat.length; r++) {
+          for (let c = 0; c < mat[r].length; c++) {
+            if (mat[r][c] !== 0) cells.push([r, c]);
+          }
+        }
+      }
+    }
+  } else if (input && 'cells' in input) {
+    cells = input.cells.slice();
+  }
+
+  if (cells.length === 0) return 'empty';
+
+  let minR = Infinity, maxR = -Infinity;
+  let minC = Infinity, maxC = -Infinity;
+
+  for (const [r, c] of cells) {
+    if (r < minR) minR = r;
+    if (r > maxR) maxR = r;
+    if (c < minC) minC = c;
+    if (c > maxC) maxC = c;
+  }
+
+  const normH = maxR - minR + 1;
+  const normW = maxC - minC + 1;
+
+  const normalizedCells = cells.map(([r, c]): [number, number] => [r - minR, c - minC]);
+  // Sort canonically: primary by row ascending, secondary by column ascending
+  normalizedCells.sort((a, b) => (a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]));
+
+  return `${normH}x${normW}:${normalizedCells.map(([r, c]) => `${r},${c}`).join(';')}`;
+}
+
+/**
+ * Normalizes any shape, cell list, or matrix so that coordinates are relative to (0, 0)
+ * with accurate dimensions, sorted cells, and minimal bounding matrix.
+ */
+export function normalizeShape(
+  input: number[][] | Array<[number, number]> | PieceShape,
+  customName?: string,
+  customCategory?: any
+): PieceShape {
+  let cells: Array<[number, number]> = [];
+  let name = customName || 'Khối chuẩn hóa';
+  let category = customCategory || 'custom';
+  let color = '#60a5fa';
+
+  if (!Array.isArray(input) && input && 'cells' in input) {
+    cells = input.cells.slice();
+    name = customName || input.name;
+    category = customCategory || input.category;
+    color = input.color;
+  } else if (Array.isArray(input)) {
+    if (input.length > 0 && Array.isArray(input[0])) {
+      if (typeof input[0][0] === 'number' && input[0].length === 2 && !Array.isArray(input[0][0])) {
+        cells = (input as Array<[number, number]>).slice();
+      } else {
+        const mat = input as number[][];
+        for (let r = 0; r < mat.length; r++) {
+          for (let c = 0; c < mat[r].length; c++) {
+            if (mat[r][c] !== 0) cells.push([r, c]);
+          }
+        }
       }
     }
   }
 
-  if (maxR === -1) return null; // empty shape
+  if (cells.length === 0) {
+    return {
+      id: 'empty',
+      name: 'Khối rỗng',
+      category: 'dot',
+      color: '#60a5fa',
+      matrix: [[0]],
+      cells: [],
+      area: 0,
+      width: 0,
+      height: 0,
+    };
+  }
+
+  let minR = Infinity, maxR = -Infinity;
+  let minC = Infinity, maxC = -Infinity;
+
+  for (const [r, c] of cells) {
+    if (r < minR) minR = r;
+    if (r > maxR) maxR = r;
+    if (c < minC) minC = c;
+    if (c > maxC) maxC = c;
+  }
 
   const normH = maxR - minR + 1;
   const normW = maxC - minC + 1;
   const normMatrix: number[][] = Array.from({ length: normH }, () => Array(normW).fill(0));
-  const cells: Array<[number, number]> = [];
+  const normCells: Array<[number, number]> = [];
 
-  for (let r = minR; r <= maxR; r++) {
-    for (let c = minC; c <= maxC; c++) {
-      if (matrix[r][c] === 1) {
-        normMatrix[r - minR][c - minC] = 1;
-        cells.push([r - minR, c - minC]);
-      }
-    }
+  for (const [r, c] of cells) {
+    const nr = r - minR;
+    const nc = c - minC;
+    normMatrix[nr][nc] = 1;
+    normCells.push([nr, nc]);
   }
 
-  const id = `custom_${cells.map(([r, c]) => `${r}-${c}`).join('_')}`;
+  normCells.sort((a, b) => (a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]));
+  const id = `shape_${normCells.map(([r, c]) => `${r}-${c}`).join('_')}`;
 
   return {
     id,
-    name: 'Khối tùy chỉnh',
-    category: 'custom' as any,
-    color: '#60a5fa',
+    name,
+    category,
+    color,
     matrix: normMatrix,
-    cells,
-    area: cells.length,
+    cells: normCells,
+    area: normCells.length,
     width: normW,
     height: normH,
   };
+}
+
+/**
+ * Rotates a 2D binary matrix by 90, 180, or 270 degrees clockwise.
+ */
+export function rotateMatrix(matrix: number[][], degrees: 90 | 180 | 270): number[][] {
+  const H = matrix.length;
+  const W = matrix[0].length;
+
+  if (degrees === 90) {
+    const res: number[][] = Array.from({ length: W }, () => Array(H).fill(0));
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        res[c][H - 1 - r] = matrix[r][c];
+      }
+    }
+    return res;
+  } else if (degrees === 180) {
+    const res: number[][] = Array.from({ length: H }, () => Array(W).fill(0));
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        res[H - 1 - r][W - 1 - c] = matrix[r][c];
+      }
+    }
+    return res;
+  } else if (degrees === 270) {
+    const res: number[][] = Array.from({ length: W }, () => Array(H).fill(0));
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        res[W - 1 - c][r] = matrix[r][c];
+      }
+    }
+    return res;
+  }
+  return matrix;
+}
+
+/**
+ * Flips a 2D binary matrix horizontally (left-right) or vertically (top-bottom).
+ */
+export function flipMatrix(matrix: number[][], axis: 'horizontal' | 'vertical'): number[][] {
+  const H = matrix.length;
+  const W = matrix[0].length;
+  const res: number[][] = Array.from({ length: H }, () => Array(W).fill(0));
+
+  if (axis === 'horizontal') {
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        res[r][W - 1 - c] = matrix[r][c];
+      }
+    }
+  } else {
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        res[H - 1 - r][c] = matrix[r][c];
+      }
+    }
+  }
+  return res;
+}
+
+/**
+ * Generates all allowed geometric rotations and reflections for a shape,
+ * removing redundant identical configurations due to symmetry.
+ */
+export function generateAllowedTransforms(shape: PieceShape): PieceShape[] {
+  const transforms: PieceShape[] = [];
+  const seenCanonical = new Set<string>();
+
+  const baseMatrix = shape.matrix;
+  const candidates: Array<{ matrix: number[][]; rotation: 0 | 90 | 180 | 270; isFlipped: boolean }> = [
+    { matrix: baseMatrix, rotation: 0, isFlipped: false },
+    { matrix: rotateMatrix(baseMatrix, 90), rotation: 90, isFlipped: false },
+    { matrix: rotateMatrix(baseMatrix, 180), rotation: 180, isFlipped: false },
+    { matrix: rotateMatrix(baseMatrix, 270), rotation: 270, isFlipped: false },
+    { matrix: flipMatrix(baseMatrix, 'horizontal'), rotation: 0, isFlipped: true },
+    { matrix: rotateMatrix(flipMatrix(baseMatrix, 'horizontal'), 90), rotation: 90, isFlipped: true },
+    { matrix: rotateMatrix(flipMatrix(baseMatrix, 'horizontal'), 180), rotation: 180, isFlipped: true },
+    { matrix: rotateMatrix(flipMatrix(baseMatrix, 'horizontal'), 270), rotation: 270, isFlipped: true },
+  ];
+
+  for (const cand of candidates) {
+    const key = getCanonicalShapeKey(cand.matrix);
+    if (!seenCanonical.has(key)) {
+      seenCanonical.add(key);
+      const normalized = normalizeShape(cand.matrix, `${shape.name} (${cand.rotation}°${cand.isFlipped ? ' Lật' : ''})`, shape.category);
+      normalized.baseShapeId = shape.baseShapeId || shape.id;
+      normalized.rotation = cand.rotation;
+      normalized.isFlipped = cand.isFlipped;
+      transforms.push(normalized);
+    }
+  }
+
+  return transforms;
+}
+
+export function normalizeMatrix(matrix: number[][]): PieceShape | null {
+  const norm = normalizeShape(matrix);
+  if (norm.area === 0) return null;
+  return norm;
 }
 
 function createPreset(
@@ -494,3 +685,58 @@ for (const [alias, target] of Object.entries(ALIASES)) {
 export function getShapeById(id: string): PieceShape | undefined {
   return SHAPES_MAP.get(id);
 }
+
+let cachedUniqueShapes: PieceShape[] | null = null;
+
+/**
+ * Returns all geometrically unique shapes present across the library.
+ * Filters out rotational/reflection clones that map to the identical cell matrix.
+ */
+export function getUniqueShapes(): PieceShape[] {
+  if (cachedUniqueShapes) return cachedUniqueShapes;
+
+  const seenKeys = new Set<string>();
+  const uniqueList: PieceShape[] = [];
+
+  for (const shape of PRESET_SHAPES) {
+    const key = getCanonicalShapeKey(shape);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueList.push(shape);
+    }
+  }
+
+  cachedUniqueShapes = uniqueList;
+  return uniqueList;
+}
+
+/**
+ * Returns all valid oriented shape variants declared in the catalog.
+ */
+export function getValidVariants(): PieceShape[] {
+  return PRESET_SHAPES;
+}
+
+/**
+ * Returns representative base shapes (parent polyominoes before rotation or reflection).
+ */
+export function getBaseShapes(): PieceShape[] {
+  const baseMap = new Map<string, PieceShape>();
+  for (const s of PRESET_SHAPES) {
+    // Extract base family identifier
+    const baseId = s.id.replace(/_(0|90|180|270|h|v|main|flip|tl|tr|bl|br)/g, '');
+    if (!baseMap.has(baseId)) {
+      baseMap.set(baseId, s);
+    }
+  }
+  return Array.from(baseMap.values());
+}
+
+/**
+ * In Block Blast, all unique oriented geometric shapes present in the preset catalog
+ * are eligible to spawn in the bottom tray.
+ */
+export function getSpawnableShapes(): PieceShape[] {
+  return getUniqueShapes();
+}
+

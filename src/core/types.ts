@@ -41,15 +41,35 @@ export type TerminationReason =
   | 'EXHAUSTIVE_SEARCH_COMPLETED'
   | 'TIMEOUT'
   | 'MAX_SOLUTIONS_REACHED'
+  | 'MAX_NODES_REACHED'
+  | 'RESOURCE_LIMIT_REACHED'
   | 'USER_CANCELLED'
   | 'INPUT_UNCERTAIN'
   | 'ERROR';
 
 export type FutureStatusCode =
   | 'FUTURE_PATH_FOUND'
+  | 'FUTURE_PATH_FAILED'
   | 'FUTURE_DEAD_END_FOUND'
   | 'FUTURE_SEARCH_INCOMPLETE'
+  | 'FUTURE_INPUT_UNCERTAIN'
   | 'FUTURE_RISK_ESTIMATE';
+
+export interface FuturePlanningMetrics {
+  status: FutureStatusCode;
+  scenarioMode: 'exhaustive' | 'representative' | 'probabilistic';
+  futureDepth: number;
+  totalPossibleTriplets: number;
+  scenariosTested: number;
+  scenariosSurvived: number;
+  scenariosFailed: number;
+  scenarioCoverage: number; // 0..1
+  shapeCoverage: number;    // 0..1
+  uniqueShapesCount: number;
+  untestedScenariosCount: number;
+  fitRatio: number;         // ratio of placeable unique shapes on resulting board
+  notes?: string;
+}
 
 export interface VerifiedSolution {
   id: string;
@@ -61,6 +81,7 @@ export interface VerifiedSolution {
   // Future Planning & Evaluation Metrics
   futureScore: number;
   futureStatus: FutureStatusCode;
+  futureMetrics?: FuturePlanningMetrics;
   predictedSurvivalDepth: number;
   testedFutureBranches: number;
   freeCells: number;
