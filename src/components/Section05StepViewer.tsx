@@ -4,7 +4,9 @@ import { Check } from 'lucide-react';
 
 interface Section05StepViewerProps {
   initialBoard: BoardMatrix;
+  solutions?: VerifiedSolution[];
   solution: VerifiedSolution | null;
+  onSelectSolution?: (sol: VerifiedSolution) => void;
   pieces: (PieceShape | null)[];
   nodesVisited?: number;
   onApplyFinalBoard: (finalBoard: BoardMatrix) => void;
@@ -12,7 +14,9 @@ interface Section05StepViewerProps {
 
 export const Section05StepViewer: React.FC<Section05StepViewerProps> = ({
   initialBoard,
+  solutions = [],
   solution,
+  onSelectSolution,
   pieces,
   nodesVisited = 723,
   onApplyFinalBoard,
@@ -212,7 +216,7 @@ export const Section05StepViewer: React.FC<Section05StepViewerProps> = ({
       {solution ? (
         <div className="flex flex-col gap-3">
           <div className="text-xs text-slate-300 leading-relaxed">
-            Lời giải đầy đủ · Đặt 3/3 khối · {solution.linesClearedTotal} hàng/cột được xóa · Điểm heuristic {Math.round(solution.futureScore)} · {nodesVisited} trạng thái đã xét. · ƯỚC LƯỢNG sống sót {solution.predictedSurvivalDepth} lượt: {(70 + (solution.predictedSurvivalDepth * 10)).toFixed(1)}% (20 mô phỏng).
+            Lời giải đầy đủ · Đặt đủ 3/3 khối · {solution.linesClearedTotal} hàng/cột được giải phóng · Điểm chiến lược: {Math.round(solution.futureScore)} · {nodesVisited} trạng thái đã xét · Mô phỏng đa lượt sống sót: {solution.predictedSurvivalDepth} lượt ({solution.testedFutureBranches} kịch bản nhánh).
           </div>
 
           {/* 3 Step Cards matching exact screenshot with colored step badges */}
@@ -252,6 +256,31 @@ export const Section05StepViewer: React.FC<Section05StepViewerProps> = ({
               );
             })}
           </div>
+
+          {/* Multiple Complete Solutions Switcher */}
+          {solutions.length > 1 && (
+            <div className="pt-2 flex flex-col gap-1.5 border-t border-[#1e293b]">
+              <span className="text-[11px] text-slate-400">
+                Các phương án đặt đủ 3 khối khác ({solutions.length}):
+              </span>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {solutions.slice(0, 8).map((sol) => (
+                  <button
+                    key={sol.id}
+                    type="button"
+                    onClick={() => onSelectSolution && onSelectSolution(sol)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      sol.id === solution.id
+                        ? 'bg-blue-600 text-white border-blue-400'
+                        : 'bg-[#090d16] text-slate-400 border-[#1e293b] hover:border-slate-700'
+                    }`}
+                  >
+                    Hạng #{sol.rank || 1} ({sol.futureScore} đ)
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-xs text-slate-400 leading-relaxed py-1">

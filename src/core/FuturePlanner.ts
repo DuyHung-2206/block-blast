@@ -24,35 +24,44 @@ export const DEFAULT_WEIGHTS: EvaluationWeights = {
 };
 
 /**
- * Benchmark representative scenarios of future piece triplets:
- * Includes high-risk demanding shapes (3x3 square, 5-bar, big corners)
- * and flexible shapes (dots, 2x2, small corners).
+ * Standard representative testing triplets for future turns:
+ * Turn 2 Pressure Triplet: High demanding giant shapes
+ * Turn 2 Standard Triplet: Mixed shapes
+ * Turn 3 Follow-up Triplet: Secondary continuation test
  */
-const REPRESENTATIVE_FUTURE_TRIPLETS: PieceShape[][] = [
-  // Triplet 1: High pressure (Big 3x3 + 5-bar line + 2x2)
-  [
-    getShapeById('square_3x3')!,
-    getShapeById('line_5_h')!,
-    getShapeById('square_2x2')!,
-  ],
-  // Triplet 2: Heavy corners (Big corner + L 3x2 + 3-line)
-  [
-    getShapeById('corner_big_tl')!,
-    getShapeById('L_3x2_0')!,
-    getShapeById('line_3_v')!,
-  ],
-  // Triplet 3: Mixed standard (T-shape + Z-shape + 4-line)
-  [
-    getShapeById('T_2x3_down')!,
-    getShapeById('Z_2x3')!,
-    getShapeById('line_4_h')!,
-  ],
-  // Triplet 4: Rapid fill (2x2 + 3x1 + Corner small)
-  [
-    getShapeById('square_2x2')!,
-    getShapeById('line_3_h')!,
-    getShapeById('corner_small_tl')!,
-  ],
+const FUTURE_SCENARIOS: { name: string; pieces: PieceShape[] }[] = [
+  {
+    name: 'Kịch bản áp lực cao (Vuông 3x3 + Thanh 5 + Vuông 2x2)',
+    pieces: [
+      getShapeById('square_3x3')!,
+      getShapeById('bar_5_h')!,
+      getShapeById('square_2x2')!,
+    ],
+  },
+  {
+    name: 'Kịch bản góc lớn (L lớn + L nhỏ + Thanh 3)',
+    pieces: [
+      getShapeById('corner_big_90')!,
+      getShapeById('corner_small_0')!,
+      getShapeById('bar_3_v')!,
+    ],
+  },
+  {
+    name: 'Kịch bản chuẩn (Chữ T + Chữ Z + Thanh 4)',
+    pieces: [
+      getShapeById('T_0')!,
+      getShapeById('Z_0')!,
+      getShapeById('bar_4_h')!,
+    ],
+  },
+  {
+    name: 'Kịch bản lấp nhanh (Vuông 2x2 + Thanh 3 + Ô đơn)',
+    pieces: [
+      getShapeById('square_2x2')!,
+      getShapeById('bar_3_h')!,
+      getShapeById('dot_1')!,
+    ],
+  },
 ];
 
 export class FutureStatePlanner {
@@ -60,6 +69,10 @@ export class FutureStatePlanner {
    * Evaluates and ranks all candidates that have ALREADY PASSED the Exact 3-Piece Solver.
    * Does NOT filter or invent solutions. Only assigns future quality scores, survival depths,
    * and ranks.
+   * 
+   * MULTI-TURN CONTINUOUS PATH SIMULATION:
+   * Takes the resulting board after all 3 pieces of Turn 1 are placed, then simulates
+   * Turn 2 placement of 3 pieces, updates board, and proceeds to Turn 3 if depth allows.
    */
   static rankSolutions(
     solutions: VerifiedSolution[],
@@ -68,12 +81,12 @@ export class FutureStatePlanner {
   ): VerifiedSolution[] {
     if (solutions.length === 0) return [];
 
-    const testScenarios =
+    const scenariosToTest =
       strategy === 'fast'
-        ? REPRESENTATIVE_FUTURE_TRIPLETS.slice(0, 1)
+        ? FUTURE_SCENARIOS.slice(0, 1)
         : strategy === 'balanced'
-        ? REPRESENTATIVE_FUTURE_TRIPLETS.slice(0, 2)
-        : REPRESENTATIVE_FUTURE_TRIPLETS; // deep: all 4 scenarios
+        ? FUTURE_SCENARIOS.slice(0, 2)
+        : FUTURE_SCENARIOS; // deep: all 4 scenarios
 
     const evaluatedSolutions = solutions.map((sol) => {
       const finalBb = BitBoardHelper.matrixToBitBoard(sol.finalBoard);
@@ -93,56 +106,61 @@ export class FutureStatePlanner {
 
       // Multi-turn lookahead simulation
       let futureBranchesTested = 0;
-      let turnsSurvived = 1; // Passed turn 1
+      let turnsSurvived = 1; // Passed turn 1 (current turn)
       let deadEndsFound = 0;
       let futurePathsFound = 0;
 
-      for (const futureTriplet of testScenarios) {
+      for (const scenario of scenariosToTest) {
         futureBranchesTested++;
 
-        // Run fast one-turn solver on the future triplet
-        const futureResult = Exact3PieceSolver.solve(
+        // 1. Simulate Turn 2 on this solution's final board with exact 3-piece requirement
+        const t2Result = Exact3PieceSolver.solve(
           sol.finalBoard,
-          futureTriplet,
+          scenario.pieces,
           { maxSolutions: 1, timeLimitMs: strategy === 'deep' ? 120 : 60 }
         );
 
-        if (futureResult.status === 'SOLVED_COMPLETE' && futureResult.solutions.length > 0) {
+        if (t2Result.status === 'SOLVED_COMPLETE' && t2Result.solutions.length > 0) {
           turnsSurvived = Math.max(turnsSurvived, 2);
           futurePathsFound++;
           score += weights.futureSurvivalDepthWeight;
 
-          // If in deep mode, simulate one step further with the future final board
+          // 2. Continuous Path Simulation: If in deep/balanced mode, chain to Turn 3
+          // Take Turn 2's resulting final board and simulate Turn 3
           if (strategy === 'deep') {
-            const nextBest = futureResult.solutions[0];
-            const secondaryTriplet = [
+            const turn2FinalBoard = t2Result.solutions[0].finalBoard;
+            const turn3Scenario = [
               getShapeById('square_2x2')!,
-              getShapeById('line_3_h')!,
+              getShapeById('bar_3_h')!,
               getShapeById('dot_1')!,
             ];
+
             const t3Result = Exact3PieceSolver.solve(
-              nextBest.finalBoard,
-              secondaryTriplet,
+              turn2FinalBoard,
+              turn3Scenario,
               { maxSolutions: 1, timeLimitMs: 60 }
             );
+
             if (t3Result.status === 'SOLVED_COMPLETE') {
               turnsSurvived = 3;
               score += weights.futureSurvivalDepthWeight * 0.8;
             }
           }
-        } else if (futureResult.status === 'NO_COMPLETE_SOLUTION') {
+        } else if (t2Result.status === 'NO_COMPLETE_SOLUTION') {
           deadEndsFound++;
-          score -= 30.0; // Penalty for failing a standard pressure scenario
+          score -= 35.0; // Penalty for dead-ending under standard piece scenarios
         }
       }
 
-      let futureStatus: FutureStatusCode = 'FUTURE_SEARCH_INCOMPLETE';
-      if (futurePathsFound === testScenarios.length) {
+      let futureStatus: FutureStatusCode;
+      if (futurePathsFound === scenariosToTest.length) {
         futureStatus = 'FUTURE_PATH_FOUND';
-      } else if (deadEndsFound > 0) {
+      } else if (deadEndsFound > 0 && futurePathsFound === 0) {
         futureStatus = 'FUTURE_DEAD_END_FOUND';
-      } else {
+      } else if (deadEndsFound > 0 && futurePathsFound > 0) {
         futureStatus = 'FUTURE_RISK_ESTIMATE';
+      } else {
+        futureStatus = 'FUTURE_SEARCH_INCOMPLETE';
       }
 
       return {

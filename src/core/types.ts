@@ -7,10 +7,14 @@ export type BitBoard = bigint; // 64-bit unsigned representation
 export interface PieceShape {
   id: string;
   name: string;
-  category: 'dot' | 'line' | 'square' | 'L' | 'J' | 'T' | 'Z' | 'S' | 'corner' | 'giant';
+  category: 'dot' | 'line' | 'square' | 'L' | 'J' | 'T' | 'Z' | 'S' | 'corner' | 'giant' | 'custom';
+  filterCat?: 'bar' | 'square' | 'lj' | 'tzs' | 'diagonal' | 'new';
+  baseShapeId?: string; // Original base shape before rotation/flip
+  rotation?: 0 | 90 | 180 | 270;
+  isFlipped?: boolean;
   color: string;
   matrix: number[][]; // 2D bounding grid [row][col]
-  cells: Array<[number, number]>; // Normalized relative [r, c]
+  cells: Array<[number, number]>; // Normalized relative [r, c] starting at (0, 0)
   area: number;
   width: number;
   height: number;
@@ -32,6 +36,14 @@ export type SolverStatusCode =
   | 'SEARCH_INCOMPLETE'
   | 'INPUT_UNCERTAIN'
   | 'INTERNAL_ERROR';
+
+export type TerminationReason =
+  | 'EXHAUSTIVE_SEARCH_COMPLETED'
+  | 'TIMEOUT'
+  | 'MAX_SOLUTIONS_REACHED'
+  | 'USER_CANCELLED'
+  | 'INPUT_UNCERTAIN'
+  | 'ERROR';
 
 export type FutureStatusCode =
   | 'FUTURE_PATH_FOUND'
@@ -64,10 +76,13 @@ export interface SolveResult {
   status: SolverStatusCode;
   solutions: VerifiedSolution[];
   bestSolution: VerifiedSolution | null;
+  allSolutionsEnumerated: boolean;
+  searchCompletedExhaustively: boolean;
+  terminationReason: TerminationReason;
   totalPermutationsTested: number;
   nodesVisited: number;
   timeMs: number;
-  searchCompletedExhaustively: boolean;
+  verifiedSolutionCount: number;
   message?: string;
 }
 

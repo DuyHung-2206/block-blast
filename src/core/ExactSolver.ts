@@ -1,10 +1,20 @@
-import { BOARD_SIZE, BitBoard, BoardMatrix, PieceShape, PlacedStep, SolveResult, SolverStatusCode, VerifiedSolution } from './types.js';
+import {
+  BOARD_SIZE,
+  BitBoard,
+  BoardMatrix,
+  PieceShape,
+  PlacedStep,
+  SolveResult,
+  SolverStatusCode,
+  TerminationReason,
+  VerifiedSolution,
+} from './types.js';
 import { BitBoardHelper } from './BitBoard.js';
 import { IndependentVerifier } from './verifier.js';
 
 export interface SolverOptions {
-  maxSolutions?: number; // e.g. 100
-  timeLimitMs?: number;  // e.g. 5000 ms
+  maxSolutions?: number; // e.g. 150
+  timeLimitMs?: number;  // e.g. 4000 ms
   findAllPermutations?: boolean;
 }
 
@@ -28,7 +38,11 @@ export class Exact3PieceSolver {
   /**
    * Solves current turn strictly for EXACT 3-PIECE COMPLETION.
    * Tests all valid permutations (up to 3! = 6) and all valid positions.
-   * Never accepts partial 1-piece or 2-piece placements.
+   * 
+   * GUARANTEES:
+   * 1. Only recognizes solutions where all 3 pieces are successfully placed and verified.
+   * 2. NEVER concludes NO_COMPLETE_SOLUTION if search is incomplete (e.g. timeout, max solutions, abort).
+   * 3. Independent verification step runs on each candidate solution before acceptance.
    */
   static solve(
     initialBoard: BoardMatrix,
@@ -45,11 +59,14 @@ export class Exact3PieceSolver {
         status: 'INPUT_UNCERTAIN',
         solutions: [],
         bestSolution: null,
+        allSolutionsEnumerated: false,
+        searchCompletedExhaustively: false,
+        terminationReason: 'INPUT_UNCERTAIN',
         totalPermutationsTested: 0,
         nodesVisited: 0,
         timeMs: 0,
-        searchCompletedExhaustively: false,
-        message: 'Exact Solver requires exactly 3 valid pieces.',
+        verifiedSolutionCount: 0,
+        message: 'Exact Solver yêu cầu đủ chính xác 3 khối hợp lệ.',
       };
     }
 
@@ -85,8 +102,8 @@ export class Exact3PieceSolver {
     }> = [];
 
     let nodesVisited = 0;
-    let searchCompletedExhaustively = true;
     let timedOut = false;
+    let maxSolutionsHit = false;
 
     // Transposition table for state deduplication per permutation:
     // Key: `${stepDepth}_${bb.toString()}`
@@ -105,12 +122,12 @@ export class Exact3PieceSolver {
       // Check timeout
       if (performance.now() - startTime > timeLimitMs) {
         timedOut = true;
-        searchCompletedExhaustively = false;
         return;
       }
 
+      // Check max solutions limit
       if (rawSolutions.length >= maxSolutions) {
-        searchCompletedExhaustively = false;
+        maxSolutionsHit = true;
         return;
       }
 
@@ -172,7 +189,7 @@ export class Exact3PieceSolver {
 
             accumulatedSteps.pop();
 
-            if (timedOut || rawSolutions.length >= maxSolutions) {
+            if (timedOut || maxSolutionsHit) {
               return;
             }
           }
@@ -188,7 +205,7 @@ export class Exact3PieceSolver {
     // Execute search across all unique permutations
     let permsTested = 0;
     for (const perm of uniquePermutations) {
-      if (timedOut || rawSolutions.length >= maxSolutions) break;
+      if (timedOut || maxSolutionsHit) break;
       permsTested++;
       transposition.clear();
       search(perm, 0, initialBb, [], 0);
@@ -196,12 +213,11 @@ export class Exact3PieceSolver {
 
     const elapsedMs = Math.round(performance.now() - startTime);
 
-    // Verify all solutions through the INDEPENDENT VERIFIER
+    // Verify all raw solutions through the INDEPENDENT VERIFIER
     const verifiedSolutions: VerifiedSolution[] = [];
     const seenSolutionSignatures = new Set<string>();
 
     for (const raw of rawSolutions) {
-      // Signature to deduplicate equivalent placements
       const signature = raw.steps
         .map((s) => `${s.pieceIndex}@${s.row},${s.col}`)
         .join('|');
@@ -239,32 +255,50 @@ export class Exact3PieceSolver {
       }
     }
 
-    // Determine status according to requirements:
+    // Determine termination reason & completeness flags
+    const searchCompletedExhaustively = !timedOut && !maxSolutionsHit && permsTested === uniquePermutations.length;
+    const allSolutionsEnumerated = searchCompletedExhaustively;
+
+    let terminationReason: TerminationReason = 'EXHAUSTIVE_SEARCH_COMPLETED';
+    if (timedOut) {
+      terminationReason = 'TIMEOUT';
+    } else if (maxSolutionsHit) {
+      terminationReason = 'MAX_SOLUTIONS_REACHED';
+    }
+
+    // Determine solver status
     let status: SolverStatusCode;
+    let message: string;
+
     if (verifiedSolutions.length > 0) {
       status = 'SOLVED_COMPLETE';
-    } else if (timedOut) {
-      // Never mislabel timeout as NO_COMPLETE_SOLUTION
+      message = allSolutionsEnumerated
+        ? `Đã tìm thấy và kiểm chứng độc lập toàn bộ ${verifiedSolutions.length} phương án hoàn chỉnh (đủ cả 3 khối).`
+        : `Tìm thấy ${verifiedSolutions.length} phương án hoàn chỉnh (tìm kiếm dừng sớm do ${terminationReason === 'TIMEOUT' ? 'hết thời gian' : 'đạt giới hạn số nghiệm'}).`;
+    } else if (!searchCompletedExhaustively) {
+      // If 0 solutions found but search was cut short, MUST BE SEARCH_INCOMPLETE, NOT NO_COMPLETE_SOLUTION!
       status = 'SEARCH_INCOMPLETE';
+      message = terminationReason === 'TIMEOUT'
+        ? `Chưa hoàn tất tìm kiếm do hết thời gian (${timeLimitMs}ms). Chưa thể kết luận thế cờ có vô nghiệm hay không.`
+        : `Tìm kiếm chưa hoàn tất do đạt giới hạn tài nguyên.`;
     } else {
       // Exhaustive search finished and zero valid 3-piece solutions exist
       status = 'NO_COMPLETE_SOLUTION';
+      message = 'Đã duyệt cạn kiệt toàn bộ không gian trạng thái: Chứng minh không tồn tại bất kỳ chuỗi nào đặt đủ cả 3 khối.';
     }
 
     return {
       status,
       solutions: verifiedSolutions,
       bestSolution: verifiedSolutions[0] || null,
+      allSolutionsEnumerated,
+      searchCompletedExhaustively,
+      terminationReason,
       totalPermutationsTested: permsTested,
       nodesVisited,
       timeMs: elapsedMs,
-      searchCompletedExhaustively: searchCompletedExhaustively && !timedOut,
-      message:
-        status === 'NO_COMPLETE_SOLUTION'
-          ? 'Exhaustive search verified: No sequence of placements can accommodate all 3 pieces.'
-          : status === 'SEARCH_INCOMPLETE'
-          ? 'Search reached resource/time limit before completing exhaustive search.'
-          : `Found and independently verified ${verifiedSolutions.length} complete 3-piece placement solutions.`,
+      verifiedSolutionCount: verifiedSolutions.length,
+      message,
     };
   }
 }

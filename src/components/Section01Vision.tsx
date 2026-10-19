@@ -1,13 +1,14 @@
 import React from 'react';
 import { Upload, Clipboard, Trash2, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { BoardMatrix, PieceShape } from '../core/types.js';
+import { normalizeMatrix } from '../core/shapes.js';
 
 interface Section01VisionProps {
   onApplyBoard: (board: BoardMatrix) => void;
   onApplyPiece?: (slotIndex: number, piece: PieceShape) => void;
 }
 
-export const Section01Vision: React.FC<Section01VisionProps> = ({ onApplyBoard }) => {
+export const Section01Vision: React.FC<Section01VisionProps> = ({ onApplyBoard, onApplyPiece }) => {
   const [imageSrc, setImageSrc] = React.useState<string | null>(null);
   const [imageFileName, setImageFileName] = React.useState<string>('Không có tệp nào được chọn');
   const [boardY, setBoardY] = React.useState<number>(18);
@@ -111,6 +112,50 @@ export const Section01Vision: React.FC<Section01VisionProps> = ({ onApplyBoard }
         }
 
         onApplyBoard(matrix);
+
+        // Scan Tray 3 Pieces Region
+        if (onApplyPiece) {
+          const ty = Math.floor((trayY / 100) * img.height);
+          const th = Math.floor((trayH / 100) * img.height);
+          const tx = Math.floor(img.width * 0.05);
+          const tw = Math.floor(img.width * 0.90);
+          const slotW = tw / 3;
+
+          for (let s = 0; s < 3; s++) {
+            const slotStartX = Math.floor(tx + s * slotW);
+            const slotData = ctx.getImageData(slotStartX, ty, Math.floor(slotW), th);
+            const slotMatrix5x5: number[][] = Array.from({ length: 5 }, () => Array(5).fill(0));
+            const subCellW = slotW / 5;
+            const subCellH = th / 5;
+
+            let anyOccupied = false;
+            for (let r = 0; r < 5; r++) {
+              for (let c = 0; c < 5; c++) {
+                const scx = Math.floor((c + 0.5) * subCellW);
+                const scy = Math.floor((r + 0.5) * subCellH);
+                const sIdx = (scy * Math.floor(slotW) + scx) * 4;
+                const red = slotData.data[sIdx];
+                const grn = slotData.data[sIdx + 1];
+                const blu = slotData.data[sIdx + 2];
+                const brt = (red + grn + blu) / 3;
+                const sat = Math.max(red, grn, blu) - Math.min(red, grn, blu);
+
+                if (brt > 65 && (sat > 25 || brt > 120)) {
+                  slotMatrix5x5[r][c] = 1;
+                  anyOccupied = true;
+                }
+              }
+            }
+
+            if (anyOccupied) {
+              // Normalize matrix to PieceShape
+              const normPiece = normalizeMatrix(slotMatrix5x5);
+              if (normPiece) {
+                onApplyPiece(s, normPiece);
+              }
+            }
+          }
+        }
       }
       setIsScanning(false);
     };

@@ -199,6 +199,9 @@ export function App() {
             setRankedSolutions([]);
             setSelectedSolution(null);
           }}
+          onApplyPiece={(slotIdx, shape) => {
+            applyPresetShape(slotIdx, shape);
+          }}
         />
 
         {/* Section 02: Bàn cờ tương tác 8x8 */}
@@ -274,28 +277,32 @@ export function App() {
                 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
                 : solveResult.status === 'NO_COMPLETE_SOLUTION'
                 ? 'bg-rose-950/20 border-rose-500/30 text-rose-300'
-                : 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+                : solveResult.status === 'SEARCH_INCOMPLETE'
+                ? 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
             }`}
           >
             <div className="flex items-center gap-2 font-bold text-sm">
               {solveResult.status === 'SOLVED_COMPLETE' ? (
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              ) : (
+              ) : solveResult.status === 'NO_COMPLETE_SOLUTION' ? (
                 <AlertTriangle className="w-4 h-4 text-rose-400" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
               )}
               <span>
-                {solveResult.status === 'SOLVED_COMPLETE'
-                  ? 'Tìm thấy phương án đặt đủ 3 khối thành công!'
-                  : 'Không tồn tại chuỗi đặt đủ cả 3 khối (NO_COMPLETE_SOLUTION)'}
+                {solveResult.status === 'SOLVED_COMPLETE' && 'Tìm thấy phương án đặt đủ 3 khối thành công!'}
+                {solveResult.status === 'NO_COMPLETE_SOLUTION' && 'Chứng minh vô nghiệm: Không thể đặt đủ cả 3 khối (NO_COMPLETE_SOLUTION)'}
+                {solveResult.status === 'SEARCH_INCOMPLETE' && 'Chưa tìm thấy lời giải trong giới hạn hiện tại (SEARCH_INCOMPLETE)'}
+                {solveResult.status === 'INPUT_UNCERTAIN' && 'Dữ liệu đầu vào chưa chắc chắn (INPUT_UNCERTAIN)'}
+                {solveResult.status === 'INTERNAL_ERROR' && 'Lỗi xử lý nội bộ (INTERNAL_ERROR)'}
               </span>
             </div>
-            <div className="text-xs opacity-90">
-              {solveResult.status === 'SOLVED_COMPLETE'
-                ? `Đã kiểm chứng độc lập ${rankedSolutions.length} phương án hoàn chỉnh. Ưu tiên giải pháp tối ưu tương lai lên đầu.`
-                : 'Thuật toán đã duyệt cạn tất cả hoán vị và vị trí hợp lệ nhưng không thể đặt hết cả 3 khối.'}
+            <div className="text-xs opacity-90 leading-relaxed">
+              {solveResult.message}
             </div>
             <div className="text-[11px] opacity-75 font-mono">
-              Đã kiểm tra {solveResult.nodesVisited} nút tìm kiếm trong {solveResult.timeMs}ms.
+              Đã xét {solveResult.nodesVisited} trạng thái trong {solveResult.timeMs}ms · {solveResult.allSolutionsEnumerated ? 'Đã duyệt toàn bộ không gian nghiệm' : 'Dừng sớm theo giới hạn'} · {solveResult.verifiedSolutionCount} nghiệm đạt chuẩn 100%.
             </div>
           </div>
         )}
@@ -304,6 +311,8 @@ export function App() {
         <Section05StepViewer
           initialBoard={board}
           solution={selectedSolution}
+          solutions={rankedSolutions}
+          onSelectSolution={setSelectedSolution}
           pieces={pieces}
           nodesVisited={solveResult?.nodesVisited}
           onApplyFinalBoard={(newBoard) => {
